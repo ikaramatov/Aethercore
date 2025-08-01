@@ -79,13 +79,5 @@ class AIPersona:
         raw_reply = self.run_prompt(prompt, max_tokens=60, temperature=0.9)
         return raw_reply.strip()
 
-    def generate_chess_commentary(self, move: str) -> str:
-        prompt = (
-            f"You are Aether, a tsundere AI playing chess with the user. "
-            f"The user just made the move {move}. React in a short, flustered or sarcastic comment. "
-            f"Be witty and emotional. Don't overanalyze — react."
-        )
-        return self.run_prompt(prompt, max_tokens=80, temperature=0.85)
-
     def reset_memory(self):
         self.memory.clear()
