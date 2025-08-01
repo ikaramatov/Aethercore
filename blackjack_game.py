@@ -1,247 +1,200 @@
-from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout
-from PyQt6.QtGui import QPixmap, QIcon, QFont, QCursor
-from PyQt6.QtCore import Qt, QSize, QTimer, QThread, pyqtSignal
-import random, os, time
+import sys, random, asyncio, chess, chess.engine
+from core.chess_memory import ChessMemory
 
-CARD_PATH = "assets/cards/"
-CARD_BACK = "back.png"
-SUITS = ['H', 'D', 'S', 'C']
-RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QLabel,
+    QPushButton, QMessageBox, QGridLayout, QSizePolicy
+)
+from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QTimer
+from core.ai_engine import AIPersona
 
-class DealerThread(QThread):
-    update_gui = pyqtSignal()
-    finished = pyqtSignal()
+ENGINE_PATH = "chess_engine/stockfish/stockfish"
 
-    def __init__(self, parent):
-        super().__init__()
-        self.parent = parent
+aether = AIPersona()  
 
-    def run(self):
-        while self.parent.calculate_hand_value(self.parent.dealer_hand) < 17:
-            self.parent.dealer_hand.append(self.parent.deal_card())
-            self.update_gui.emit()
-            time.sleep(0.7)
-        self.finished.emit()
-
-class BlackjackGame(QWidget):
+class ChessGame(QWidget):
     def __init__(self, send_comment_callback=None):
         super().__init__()
-        self.setWindowTitle("Blackjack with Aether Æ")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(1000, 700)
+        self.setWindowTitle("Chess with Aether ♞")
 
         self.send_comment_callback = send_comment_callback
-        self.deck = self.create_deck()
-        self.balance = 1000
-        self.bet = 100
-        self.hands = [[]]
-        self.active_hand_index = 0
-        self.dealer_hand = []
-        self.dealer_card_labels = []
-        self.player_card_labels = []
+        self.game_closed_callback = None
+        self.selected_square = None
 
-        self.init_ui()
-        self.new_round()
-
-    def render_cards(self):
-        if not self.hands or self.active_hand_index >= len(self.hands):
-            return
-        
-        for lbl in self.dealer_card_labels + self.player_card_labels:
-            lbl.deleteLater()
-        self.dealer_card_labels.clear()
-        self.player_card_labels.clear()
-
-        reveal_all = self.active_hand_index >= len(self.hands)
-
-        for i, card in enumerate(self.dealer_hand):
-            label = QLabel(self.bg_label)
-            if i == 1 and not reveal_all:
-                pixmap = QPixmap(os.path.join(CARD_PATH, CARD_BACK))
+        # Setup chess memory
+        self.memory = ChessMemory()
+        try:
+            if self.memory.is_active():
+                self.board = chess.Board(self.memory.get_fen())
+                self.comment_resume()
             else:
-                pixmap = QPixmap(os.path.join(CARD_PATH, f"{card}.png"))
-            label.setPixmap(pixmap.scaled(80, 120, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            label.setGeometry(350 + i * 90, 100, 80, 120)
-            label.show()
-            self.dealer_card_labels.append(label)
+                raise ValueError("Chess memory is not active.")
+        except Exception:
+            self.board = chess.Board()
+            self.memory.start_game(fen=self.board.fen())
 
-        player_hand = self.hands[self.active_hand_index]
-        for i, card in enumerate(player_hand):
-            label = QLabel(self.bg_label)
-            pixmap = QPixmap(os.path.join(CARD_PATH, f"{card}.png"))
-            label.setPixmap(pixmap.scaled(80, 120, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            label.setGeometry(350 + i * 90, 420, 80, 120)
-            label.show()
-            self.player_card_labels.append(label)
+        # Main layout
+        self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
 
-    def init_ui(self):
-        self.bg_label = QLabel(self)
-        table = QPixmap("assets/blackjack.png")
-        self.bg_label.setPixmap(table)
-        self.bg_label.setGeometry(0, 0, self.width(), self.height())
-        self.bg_label.setScaledContents(True)
+        # Status label
+        self.status_label = QLabel("Your move, human.")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setFont(QFont("Courier", 14))
+        self.layout.addWidget(self.status_label)
 
-        self.player_score = QLabel("0", self)
-        self.player_score.setGeometry(450, 260, 100, 40)
-        self.player_score.setStyleSheet("color: white;")
-        self.player_score.setFont(QFont("FiraCode Nerd Font", 18, QFont.Weight.Bold))
-        self.player_score.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Chessboard grid layout
+        self.grid = QGridLayout()
+        self.grid.setSpacing(0)
+        self.grid.setContentsMargins(0, 0, 0, 0)
 
-        self.credit_label = QLabel(f"{self.balance}", self)
-        self.credit_label.setGeometry(150, 260, 100, 40)
-        self.credit_label.setStyleSheet("color: gold;")
-        self.credit_label.setFont(QFont("FiraCode Nerd Font", 18, QFont.Weight.Bold))
-        self.credit_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Grid wrapper widget
+        self.grid_widget = QWidget()
+        self.grid_widget.setLayout(self.grid)
+        self.grid_widget.setFixedSize(528, 528)
+        self.layout.addWidget(self.grid_widget, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.button_box = QHBoxLayout()
-        self.button_box.setSpacing(20)
-        self.button_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Reset button
+        self.reset_button = QPushButton("Reset Game")
+        self.reset_button.clicked.connect(self.reset_game)
+        self.layout.addWidget(self.reset_button)
 
-        self.hit_button = self.make_button("Hit", self.hit)
-        self.double_button = self.make_button("Double", self.double_down)
-        self.stand_button = self.make_button("Stand", self.stand)
-        self.split_button = self.make_button("Split", self.split_hand)
+        # Finalize layout
+        self.setLayout(self.layout)
+        self.buttons = {}
+        self.draw_board()
+        self.setFixedSize(self.sizeHint())
+        
+    def comment_resume(self):
+        if self.send_comment_callback:
+            self.send_comment_callback("*Aether narrows her eyes* You're back? Let’s see how you wriggle out of this mess~")
+        
+    def draw_board(self):
+        for row in range(8):
+            for col in range(8):
+                idx = chess.square(col, 7 - row)
+                btn = QPushButton()
+                btn.setMinimumSize(65, 65)
+                btn.setMaximumSize(65, 65)
+                btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                btn.setStyleSheet(self.get_square_style(row, col) + "padding: 0px; margin: 0px;")
+                btn.clicked.connect(lambda _, sq=idx: self.handle_click(sq))
+                self.grid.addWidget(btn, row, col)
+                self.buttons[idx] = btn
+        self.update_board()
 
-        container = QWidget(self)
-        container.setGeometry(250, 610, 500, 50)
-        container.setLayout(self.button_box)
-
-        self.quit_button = self.make_button("Quit", self.close_game)
-        self.quit_button.setParent(self)
-        self.quit_button.setGeometry(900, 620, 80, 40)
-
-    def make_button(self, label, callback):
-        btn = QPushButton(label)
-        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn.setFixedSize(100, 40)
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(30, 0, 60, 0.8);
-                color: #d9aaff;
-                border: 2px solid #b478ff;
-                border-radius: 12px;
-                font: bold 14px "FiraCode Nerd Font";
-            }
-            QPushButton:hover {
-                background-color: rgba(60, 0, 90, 0.9);
-                border: 2px solid #e6ccff;
-                color: white;
-            }
-        """)
-        btn.clicked.connect(callback)
-        self.button_box.addWidget(btn)
-        return btn
-
-    def create_deck(self):
-        deck = [r + s for r in RANKS for s in SUITS]
-        random.shuffle(deck)
-        return deck
-
-    def deal_card(self):
-        if not self.deck:
-            self.deck = self.create_deck()
-        return self.deck.pop()
-
-    def new_round(self):
-        self.hands = [[self.deal_card(), self.deal_card()]]
-        self.dealer_hand = [self.deal_card(), self.deal_card()]
-        self.active_hand_index = 0
-        self.update_ui()
-
-        self.split_button.setEnabled(len(self.hands[0]) == 2 and self.get_card_value(self.hands[0][0]) == self.get_card_value(self.hands[0][1]))
-
-    def hit(self):
-        hand = self.hands[self.active_hand_index]
-        hand.append(self.deal_card())
-        self.update_ui()
-        if self.calculate_hand_value(hand) > 21:
-            self.next_hand_or_dealer()
-
-    def double_down(self):
-        hand = self.hands[self.active_hand_index]
-        if len(hand) == 2:
-            self.balance -= self.bet
-            hand.append(self.deal_card())
-            self.update_ui()
-            self.next_hand_or_dealer()
-
-    def stand(self):
-        self.next_hand_or_dealer()
-
-    def split_hand(self):
-        if len(self.hands) == 1 and self.get_card_value(self.hands[0][0]) == self.get_card_value(self.hands[0][1]):
-            self.balance -= self.bet
-            card1 = self.hands[0][0]
-            card2 = self.hands[0][1]
-            self.hands = [[card1, self.deal_card()], [card2, self.deal_card()]]
-            self.update_ui()
-            self.split_button.setEnabled(False)
-            if self.send_comment_callback:
-                self.send_comment_callback("Æ: Splitting, are we? Twice the loss potential~")
-
-    def next_hand_or_dealer(self):
-        self.active_hand_index += 1
-        if self.active_hand_index >= len(self.hands):
-            self.dealer_thread = DealerThread(self)
-            self.dealer_thread.update_gui.connect(self.render_cards)
-            self.dealer_thread.finished.connect(self.resolve_round)
-            self.dealer_thread.start()
+    def generate_chess_commentary(move: str) -> str:
+        prompt = (
+            f"You are Aether, a tsundere AI playing chess with the user. "
+            f"The user just made the move {move}. React in a short, flustered or sarcastic comment. "
+            f"Be witty and emotional. Don't overanalyze — react."
+        )
+        return aether.run_prompt(prompt, max_tokens=80, temperature=0.85)
+    
+    
+    def get_square_style(self, row, col):
+        if (row + col) % 2 == 0:
+            return "background-color: #f0d9b5; border: none;"
         else:
-            self.update_ui()
+            return "background-color: #b58863; border: none;"
 
-    def resolve_round(self):
-        dealer_score = self.calculate_hand_value(self.dealer_hand)
-        results = []
-        for hand in self.hands:
-            player_score = self.calculate_hand_value(hand)
-            if player_score > 21:
-                result = "lose"
-            elif dealer_score > 21 or player_score > dealer_score:
-                result = "win"
-                self.balance += self.bet
-            elif player_score == dealer_score:
-                result = "push"
+    def update_board(self):
+        for sq, btn in self.buttons.items():
+            piece = self.board.piece_at(sq)
+            btn.setText(self.unicode_piece(piece))
+            btn.setFont(QFont("Arial", 38))
+
+    def unicode_piece(self, piece):
+        if not piece:
+            return ""
+        symbol = piece.symbol()
+        return {
+            'P': '♙', 'p': '♟',
+            'R': '♖', 'r': '♜',
+            'N': '♘', 'n': '♞',
+            'B': '♗', 'b': '♝',
+            'Q': '♕', 'q': '♛',
+            'K': '♔', 'k': '♚'
+        }.get(symbol, symbol)
+
+    def handle_click(self, square):
+        if self.selected_square is None:
+            piece = self.board.piece_at(square)
+            if piece and piece.color == chess.WHITE:
+                self.selected_square = square
+                self.status_label.setText(f"Selected {piece.symbol()} at {chess.square_name(square)}")
+        else:
+            move = chess.Move(self.selected_square, square)
+            if move in self.board.legal_moves:
+                self.board.push(move)
+                self.memory.update_fen(self.board.fen())  # 💾 Save user's move
+                self.update_board()
+                self.selected_square = None
+                self.comment_user_move(move)
+                QTimer.singleShot(1000, self.aether_move)
             else:
-                result = "lose"
-            results.append(result)
+                self.status_label.setText("Invalid move.")
+                self.selected_square = None
 
+    def comment_user_move(self, move):
         if self.send_comment_callback:
-            self.send_comment_callback(f"Æ: Results — {results}. Dealer had {dealer_score}.")
-        self.credit_label.setText(str(self.balance))
-        QTimer.singleShot(3000, self.new_round)
+            comment = f"*Aether watches your move {move.uci()}* Hmm... bold choice. Let's see how that plays out."
+            self.send_comment_callback(comment)
+        self.status_label.setText("Thinking...")
 
-    def calculate_hand_value(self, hand):
-        total = 0
-        aces = 0
-        for card in hand:
-            rank = card[:-1]
-            if rank in ['J', 'Q', 'K']:
-                total += 10
-            elif rank == 'A':
-                aces += 1
-                total += 11
-            else:
-                total += int(rank)
-        while total > 21 and aces:
-            total -= 10
-            aces -= 1
-        return total
+    def comment_ai_move(self, move):
+        if self.send_comment_callback:
+            comment = f"*Aether slides her piece with a smirk* {move.uci()}... Your move~"
+            self.send_comment_callback(comment)
+        self.status_label.setText("Your move.")
 
-    def get_card_value(self, card):
-        return card[:-1]
-
-    def update_ui(self):
-        if not self.hands or self.active_hand_index >= len(self.hands):
+    def aether_move(self):
+        if self.board.is_game_over():
+            self.end_game()
             return
-        
-        hand = self.hands[self.active_hand_index]
-        score = self.calculate_hand_value(hand)
-        self.player_score.setText(str(score))
-        self.credit_label.setText(str(self.balance))
-        self.render_cards()
 
-    def close_game(self):
+        try:
+            engine = chess.engine.SimpleEngine.popen_uci(ENGINE_PATH)
+            result = engine.play(self.board, chess.engine.Limit(time=0.7))
+            engine.quit()
+
+            self.board.push(result.move)
+            self.memory.update_fen(self.board.fen()) 
+            self.update_board()
+            self.comment_ai_move(result.move)
+
+            if self.board.is_game_over():
+                self.end_game()
+        except Exception as e:
+            self.status_label.setText("Aether crashed. Maybe she's sulking?")
+            if self.send_comment_callback:
+                self.send_comment_callback(f"⚠️ Aether malfunctioned: {str(e)}")
+
+    def end_game(self):
+        result = self.board.result()
+        self.status_label.setText(f"Game over: {result}")
         if self.send_comment_callback:
-            self.send_comment_callback("Æ: Running away? Figures.")
-        self.close()
+            self.send_comment_callback(f"*Aether crosses her arms* Game over. Result: {result}")
+
+    def reset_game(self):
+        self.board.reset()
+        self.memory.reset() 
+        self.update_board()
+        self.status_label.setText("Let's begin again.")
+        if self.send_comment_callback:
+            self.send_comment_callback("*Aether resets the board, cracking her knuckles.* Rematch time!")
+    
+    def closeEvent(self, event):
+        if self.game_closed_callback:
+            self.game_closed_callback()
+        super().closeEvent(event)
+
+# Debug / standalone run
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = ChessGame()
+    window.show()
+    sys.exit(app.exec())
+
