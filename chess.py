@@ -14,6 +14,8 @@ from PyQt6.QtCore import Qt, QTimer
 
 ENGINE_PATH = "chess_engine/stockfish/stockfish"
 
+aether = AIPersona()
+
 class ChessGame(QWidget):
     def __init__(self, send_comment_callback=None):
         super().__init__()
@@ -72,6 +74,15 @@ class ChessGame(QWidget):
         if self.send_comment_callback:
             self.send_comment_callback("*Aether narrows her eyes* You're back? Let’s see how you wriggle out of this mess~")
         
+    def generate_chess_commentary(move: str) -> str:
+        prompt = (
+            f"You are Aether, a tsundere AI playing chess with the user. "
+            f"The user just made the move {move}. React in a short, flustered or sarcastic comment. "
+            f"Be witty and emotional. Don't overanalyze — react."
+        )
+        return aether.run_prompt(prompt, max_tokens=80, temperature=0.85)
+
+    
     def draw_board(self):
         for row in range(8):
             for col in range(8):
