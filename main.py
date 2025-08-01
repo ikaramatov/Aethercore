@@ -6,8 +6,6 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
 from ui.chat_window import ChatWindow
-from core.activity_monitor import ActivityMonitor
-from core import background
 
 def main():
     app = QApplication(sys.argv)
@@ -18,9 +16,6 @@ def main():
 
     chat_window = ChatWindow()
     chat_window.show()
-
-    background.set_chat_browser(chat_window)
-    background.start_monitoring()  # ✅ this is enough
 
     sys.exit(app.exec())
 
