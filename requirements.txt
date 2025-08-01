@@ -1,0 +1,4 @@
+pynput         # keyboard & mouse events
+psutil         # app tracking
+PyQt6          # GUI magic
+python-chess   # game logic + Stockfish engine
