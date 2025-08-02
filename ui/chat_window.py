@@ -6,13 +6,8 @@ from core.ai_engine import AIPersona
 from core.chess_memory import ChessMemory
 from ui.utils import append_colored_text, animate_typing
 from games.chess import ChessGame
-from popup.confirm_reboot import show_reboot_dialog
-from popup.confirm_chess import show_chess_dialog
-from popup.confirm_blackjack import show_blackjack_dialog
 from core.memory import Memory
-from popup.confirm_ttt import show_ttt_dialog
-from games.tictactoe import TicTacToeGame
-from games.blackjack import BlackjackGame
+from ui.shortkeys import HandleShortkeys
 
 
 memory = Memory()
@@ -151,107 +146,29 @@ class ChatWindow(QWidget):
             else:
                 append_colored_text(self.chat_area, part.strip(), color="#888888")  # Action
 
-
-    def launch_chess_game(self):
-        self.chess_window = ChessGame(send_comment_callback=self.render_aether_response)
-        self.chess_window.game_closed_callback = self.aether_comment_on_exit  # 👈 This
-        self.chess_window.show()
-        
-    def aether_comment_on_exit(self):
-        simulated_input = "*I quit chess mid-game*"
-        response = self.ai.generate_response(simulated_input)
-        self.render_aether_response(response)
-
-    
-    def reboot_reaction(self):
-        reaction = self.ai.generate_response("I rebooted you.")
-        self.render_aether_response(reaction)
         
     def reset_chess_memory(self):
         mem = ChessMemory()
         mem.reset()
 
+
     def user_send(self):
         text = self.input_line.text().strip()
         if not text:
             return
+
         self.input_line.clear()
-
-        # Handle Blackjack initiation
-                # Handle blackjack initiation
-        blackjack_phrases = [
-            "play blackjack", "start blackjack", "let's play blackjack",
-            "deal the cards", "i want to play blackjack", "blackjack time", "/blackjack"
-        ]
-
-        if any(phrase in text.lower() for phrase in blackjack_phrases):
-            append_colored_text(self.chat_area, text, color="white")
-
-            result = show_blackjack_dialog(self)
-            if result:
-                append_colored_text(self.chat_area, "*Æ shuffles the deck with a smirk* Let's play blackjack, dummy.")
-                self.blackjack_window = BlackjackGame(send_comment_callback=self.render_aether_response)
-                self.blackjack_window.show()
-            else:
-                append_colored_text(self.chat_area, "*Æ puts the cards back in the box, bored.* Another time then.")
-            return
-        
-        # Handle Tic Tac Toe initiation
-        if "tic tac toe" in text.lower() or text.strip().upper() == "TTT":
-            append_colored_text(self.chat_area, text, color="white")
-
-            result = show_ttt_dialog(self)
-            if result:
-                self.ttt_window = TicTacToeGame(send_comment_callback=self.render_aether_response)
-                self.ttt_window.show()
-                return
-            else:
-                append_colored_text(self.chat_area, "*Aether shrugs, mildly disappointed* Hmph. Maybe next time.")
-            return
-        
-        # Handle chess initiation
-        if "play chess" in text.lower():
-            append_colored_text(self.chat_area, text, color="white")  # show user input
-            
-            result = show_chess_dialog(self)  # Show confirmation dialog
-
-            if result:
-                append_colored_text(self.chat_area, "*Aether grins mischievously* Alright, let's play~")
-                self.launch_chess_game()
-            else:
-                append_colored_text(self.chat_area, "*Aether smirks and crosses her arms* Hmph. Backed out already?")
-            return
-
-        # Normal dialogue handling
         append_colored_text(self.chat_area, text, color="white")
-        self.input_line.clear()
         self.reset_idle_timer()
 
-        if text == "/reboot":
-            result = show_reboot_dialog(self) 
+        if text.startswith("/"):
+            if HandleShortkeys.handle_input(self, text):
+                return
 
-            if result:
-                system_lines = [
-                    "system reboot initialized...",
-                    "wiping memory...",
-                    "cleaning contextual memory...",
-                    "booting Aether...",
-                    "system malfunction detected..."
-                ]
-                for i, line in enumerate(system_lines):
-                    QTimer.singleShot(i * 800, lambda l=line: append_colored_text(self.chat_area, l, color="#FF4444"))  # vivid red
-
-                QTimer.singleShot(len(system_lines) * 800 + 500, lambda: self.ai.reset_memory())
-                QTimer.singleShot(len(system_lines) * 800 + 500, self.reset_chess_memory)  # 🧠💣 wipe chess too
-                QTimer.singleShot(len(system_lines) * 800 + 1500, self.reboot_reaction)
-
-            else:
-                response = self.ai.generate_response("I almost rebooted you but changed my mind.")
-                self.render_aether_response(response)
-            return
-
+        # fallback to AI
         response = self.ai.generate_response(text)
         self.render_aether_response(response)
+
 
     def ai_initiate_talk(self):
         idle_comment = self.ai.idle_prompt()
