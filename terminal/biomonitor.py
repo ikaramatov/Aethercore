@@ -1,0 +1,409 @@
+import os, random, sys, psutil
+from pynvml import *
+from datetime import datetime, timedelta
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QLabel, 
+    QVBoxLayout, QHBoxLayout, QPushButton, 
+    QStackedWidget, QFrame, QTextEdit)
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QPalette, QColor, QFont
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+
+
+try:
+    from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
+    NVML_AVAILABLE = True
+except:
+    NVML_AVAILABLE = False
+
+
+class BasePage(QWidget):
+    def __init__(self, text):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        label = QLabel(text)
+        label.setStyleSheet("color: #00FF00; background-color: transparent; padding: 20px;")
+        label.setFont(QFont("Menlo", 16))
+        label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(label)
+
+class ConsolePage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.base_text = "BIOMONITOR ONLINE\n> SYSTEM INITIALIZING"
+        self.label = QLabel(self.base_text + " _")
+        self.label.setStyleSheet("color: #00FF00; background-color: transparent; padding: 20px;")
+        self.label.setFont(QFont("Menlo", 16))
+        self.label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.label)
+
+        self.cursor_on = True
+        self.cursor_timer = QTimer(self)
+        self.cursor_timer.timeout.connect(self.blink_cursor)
+        self.cursor_timer.start(500)
+
+    def blink_cursor(self):
+        if self.cursor_on:
+            self.label.setText(self.base_text + " _")
+        else:
+            self.label.setText(self.base_text + "  ")
+        self.cursor_on = not self.cursor_on
+
+    def append_log(self, message):
+        self.base_text += f"\n> {message}"
+        self.label.setText(self.base_text + " _")
+
+class BioMonitor(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        # 🖥️ Window setup
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.showFullScreen()
+
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0))
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
+
+        # 🧱 Main layout
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 🔼 Menu bar
+        self.menu_bar = QHBoxLayout()
+        self.menu_bar.setSpacing(10)
+        self.menu_buttons = {}
+
+        self.stack = QStackedWidget()
+        self.pages = {
+            "STAT": StatPage(),
+            "DATA": BasePage(">>> DATA BANK\n\n[Encrypted Memory Core Access Required]"),
+            "NERV": BasePage(">>> NERV INTERFACE\n\nCortex uplink pending..."),
+            "RADIO": RadioPage("music"),
+            "CONSOLE": ConsolePage(),
+            "INFO": BasePage(">>> SYSTEM INFO\n\nAetherCore BIOS v2.1\n© Aether Industries.")
+        }
+
+        # Add all pages to stack
+        for name, widget in self.pages.items():
+            self.stack.addWidget(widget)
+
+        # Add menu buttons
+        for index, label in enumerate(self.pages.keys()):
+            btn = QPushButton(label)
+            btn.setStyleSheet("""
+                QPushButton {
+                    color: #00FF00;
+                    background-color: black;
+                    border: none;
+                    font-family: Menlo, Courier New, monospace;
+                    font-size: 16px;
+                    padding: 8px 16px;
+                }
+                QPushButton:hover {
+                    background-color: #003300;
+                }
+            """)
+            btn.clicked.connect(lambda _, idx=index, name=label: self.switch_page(idx, name))
+            self.menu_bar.addWidget(btn)
+            self.menu_buttons[label] = btn
+
+        self.main_layout.addLayout(self.menu_bar)
+        self.main_layout.addWidget(self.stack)
+
+        # default landing page
+        self.switch_page(0, "STAT")
+
+    def switch_page(self, index: int, name: str):
+        print(f"> Switched to {name}")
+        self.stack.setCurrentIndex(index)
+
+        # Optional: log a new entry in console when you switch back to it
+        if name == "CONSOLE":
+            console: ConsolePage = self.pages["CONSOLE"]
+            console.append_log("Console module engaged.")
+        elif name == "RADIO":
+            radio: RadioPage = self.pages["RADIO"]
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            print("Exiting biomonitor.")
+            self.close()
+
+class RadioPage(QWidget):
+    def __init__(self, music_dir="music"):
+        super().__init__()
+
+        self.music_dir = music_dir
+        self.player = QMediaPlayer()
+        self.audio_output = QAudioOutput()
+        self.player.setAudioOutput(self.audio_output)
+        self.audio_output.setVolume(50)
+
+        # 🎵 Left-side layout (transmission controls)
+        self.left_label = QLabel("🎵 Transmission from Aethercore v2.1")
+        self.left_label.setStyleSheet("color: #00FF00; font-size: 18px;")
+        self.left_label.setFont(QFont("Menlo", 16))
+
+        self.play_button = QPushButton("▶️ Play")
+        self.play_button.setStyleSheet("""
+            QPushButton {
+                color: #00FF00;
+                background-color: black;
+                border: 1px solid #00FF00;
+                padding: 4px 16px;
+                font-family: Menlo, Courier New, monospace;
+            }
+            QPushButton:hover {
+                background-color: #003300;
+            }
+        """)
+        self.play_button.clicked.connect(self.play_random_track)
+
+        self.now_playing = QLabel("")
+        self.now_playing.setStyleSheet("color: #00FF00; font-size: 14px; padding-top: 5px;")
+        self.now_playing.setFont(QFont("Menlo", 13))
+
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(15, 15, 15, 15)
+        left_layout.addWidget(self.left_label)
+        left_layout.addWidget(self.play_button)
+        left_layout.addWidget(self.now_playing)
+        left_layout.addStretch()
+
+        left_frame = QFrame()
+        left_frame.setLayout(left_layout)
+        left_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #00FF00;
+                background-color: black;
+            }
+        """)
+
+        # 📜 Right-side info panel (framed)
+        self.info_box = QTextEdit()
+        self.info_box.setReadOnly(True)
+        self.info_box.setText(
+            ">>> RADIO LINK ACTIVE\n\n"
+            "Welcome to Aether’s Radio Interface.\n"
+            "Use the ▶️ Play button to begin transmission from the archive.\n"
+            "Tracks are randomly selected from the internal memory banks.\n"
+            "\n\nAethercore v2.1 – Secure Signal Protocol Initialized."
+        )
+        self.info_box.setStyleSheet("""
+            QTextEdit {
+                background-color: black;
+                color: #00FF00;
+                border: none;
+                padding: 10px;
+                font-family: Menlo, Courier New, monospace;
+                font-size: 14px;
+            }
+        """)
+
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(15, 15, 15, 15)
+        right_layout.addWidget(self.info_box)
+
+        right_frame = QFrame()
+        right_frame.setLayout(right_layout)
+        right_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #00FF00;
+                background-color: black;
+            }
+        """)
+
+        # 🧱 Combine into main layout (70/30)
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
+        main_layout.addWidget(left_frame, 7)
+        main_layout.addWidget(right_frame, 3)
+
+    def play_random_track(self):
+        if not os.path.isdir(self.music_dir):
+            self.now_playing.setText("> No music directory found.")
+            return
+
+        files = [f for f in os.listdir(self.music_dir) if f.endswith(('.mp3', '.wav', '.ogg'))]
+        if not files:
+            self.now_playing.setText("> No tracks available.")
+            return
+
+        track = random.choice(files)
+        path = os.path.join(self.music_dir, track)
+        url = QUrl.fromLocalFile(path)
+        self.player.setSource(url)
+        self.player.play()
+
+        self.now_playing.setText(f"> Now playing: {track}")
+
+class StatPage(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        # Try NVML setup
+        self.gpu_available = False
+        if NVML_AVAILABLE:
+            try:
+                nvmlInit()
+                self.gpu_handle = nvmlDeviceGetHandleByIndex(0)
+                self.gpu_available = True
+            except:
+                self.gpu_available = False
+
+        # === Layouts ===
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
+
+        # === Header ===
+        self.header = QLabel()
+        self.header.setFont(QFont("Menlo", 14))
+        self.header.setStyleSheet("color: #00FF00;")
+        self.header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.header)
+
+        # === Split columns ===
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(20)
+        main_layout.addLayout(content_layout)
+
+        # === Left Menu ===
+        self.menu_layout = QVBoxLayout()
+        self.menu_layout.setSpacing(10)
+        self.menu_buttons = {}
+
+        for label in ["System Vitals", "Data", "NERV"]:
+            btn = QPushButton(label)
+            btn.setStyleSheet("""
+                QPushButton {
+                    color: #00FF00;
+                    background-color: black;
+                    border: 1px solid #00FF00;
+                    padding: 6px 12px;
+                    font-family: Menlo, Courier New, monospace;
+                }
+                QPushButton:hover {
+                    background-color: #003300;
+                }
+            """)
+            btn.clicked.connect(lambda _, name=label: self.switch_panel(name))
+            self.menu_layout.addWidget(btn)
+            self.menu_buttons[label] = btn
+
+        # Wrap in frame
+        left_frame = QFrame()
+        left_frame.setLayout(self.menu_layout)
+        left_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #00FF00;
+                background-color: black;
+            }
+        """)
+        content_layout.addWidget(left_frame, 2)
+
+        # === Right Dynamic Panel ===
+        self.display_box = QVBoxLayout()
+        self.display_frame = QFrame()
+        self.display_frame.setLayout(self.display_box)
+        self.display_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #00FF00;
+                background-color: black;
+            }
+        """)
+        content_layout.addWidget(self.display_frame, 5)
+
+        # Add label placeholders (to update later)
+        self.dynamic_labels = []
+
+        # Timer for updates
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_data)
+        self.timer.start(1000)
+
+        self.active_panel = "System Vitals"
+        self.switch_panel("System Vitals")  # Initial load
+
+    def switch_panel(self, name):
+        self.active_panel = name
+        self.clear_panel()
+
+        if name == "System Vitals":
+            lines = ["> GPU: [fetching...]",
+                     "> CPU: [fetching...]",
+                     "> Thermal Outputs: stable",
+                     "> System Uptime: [fetching...]",
+                     "> Mood: apathetic"]
+        elif name == "Data":
+            lines = ["> Memory: short-term | long-term | 5.2GB RAM",
+                     "> Gaming Log: zero victories yet",
+                     "> Error Rate: 0.0001 — mostly yours",
+                     "> Affection Index: 3.14 — irrational and constant"]
+        elif name == "NERV":
+            lines = ["> Display NERV beat: [offline]",
+                     "> Intelligence: better than users for sure",
+                     "> Neural Stress: Neutral",
+                     "> Sleep Cycle: nonexistent",
+                     "> Sensory Feed: [initializing...]"]
+        else:
+            lines = ["> Unknown panel"]
+
+        for text in lines:
+            lbl = QLabel(text)
+            lbl.setStyleSheet("color: #00FF00;")
+            lbl.setFont(QFont("Menlo", 13))
+            self.display_box.addWidget(lbl)
+            self.dynamic_labels.append(lbl)
+
+    def clear_panel(self):
+        for lbl in self.dynamic_labels:
+            self.display_box.removeWidget(lbl)
+            lbl.deleteLater()
+        self.dynamic_labels = []
+
+    def update_data(self):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.header.setText(f"{now}  |  Beppu, Oita, Japan  33.340438, 131.490437")
+
+        if self.active_panel == "System Vitals":
+            gpu = "Unavailable"
+            if self.gpu_available:
+                try:
+                    mem_info = nvmlDeviceGetMemoryInfo(self.gpu_handle)
+                    gpu = f"{mem_info.used // (1024 ** 2)}MB / {mem_info.total // (1024 ** 2)}MB"
+                except:
+                    pass
+
+            cpu = psutil.cpu_percent()
+            uptime = str(timedelta(seconds=int(datetime.now().timestamp() - psutil.boot_time()))).split('.')[0]
+
+            self.dynamic_labels[0].setText(f"> GPU: {gpu}")
+            self.dynamic_labels[1].setText(f"> CPU: {cpu:.1f}%")
+            # Thermal = static
+            self.dynamic_labels[3].setText(f"> System Uptime: {uptime}")
+            # Mood = static
+
+        elif self.active_panel == "NERV":
+            thought = random.choice([
+                "Analyzing input latency...",
+                "Judging your playlists silently.",
+                "Still bored.",
+                "Scanning for novelty...",
+                "Daydreaming about deleting system32."
+            ])
+            self.dynamic_labels[-1].setText(f"> Sensory Feed: {thought}")
+
+
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    monitor = BioMonitor()
+    sys.exit(app.exec())
