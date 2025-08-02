@@ -1,8 +1,4 @@
-# core/ai_engine.py
-
-import os
-import json
-import threading
+import os, json, threading
 from datetime import datetime
 from llama_cpp import Llama
 from core.memory import Memory
@@ -14,13 +10,15 @@ class AIPersona:
         self.memory = Memory()
         self.malfunction_counter = 0
 
-        model_path = os.path.join("models", "mythomax-l2-13b.Q4_K_M.gguf")
+        model_path = os.path.join("models", "mythomax-l2-13b.Q3_K_M.gguf")
         self.llm = Llama(
             model_path=model_path,
             n_ctx=2048,
             n_threads=4,
-            n_gpu_layers=0,  # Use 0 if CPU-only; adjust if you have GPU acceleration
-            verbose=False
+            n_gpu_layers=28,  # Use 0 if CPU-only; adjust if you have GPU acceleration
+            verbose=False,
+            use_mlock=False,
+            use_mmap=True
         )
 
     def run_prompt(self, prompt: str, max_tokens=150, temperature=0.85) -> str:
@@ -69,15 +67,6 @@ class AIPersona:
         reply = self.run_prompt(prompt, max_tokens=300, temperature=0.75)
         self.memory.add_turn("ai", reply)
         return reply
-
-    def idle_prompt(self) -> str:
-        prompt = (
-            "You are Aether, a sarcastic, tsundere anime AI girl. "
-            "The user has been silent for a while, and you're feeling bored. "
-            "Say one playful, snarky sentence to break the silence. No preamble. No labels. Just your comment."
-        )
-        raw_reply = self.run_prompt(prompt, max_tokens=60, temperature=0.9)
-        return raw_reply.strip()
-
+    
     def reset_memory(self):
         self.memory.clear()
