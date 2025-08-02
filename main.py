@@ -1,10 +1,6 @@
-# main.py
-
-import sys
-import os
+import sys, os
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
-
 from ui.chat_window import ChatWindow
 
 def main():
