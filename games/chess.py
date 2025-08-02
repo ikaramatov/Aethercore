@@ -1,13 +1,12 @@
-import sys, random, asyncio, chess, chess.engine
+import sys, chess, chess.engine
 from core.chess_memory import ChessMemory
-
+from core.ai_engine import AIPersona
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QLabel,
-    QPushButton, QMessageBox, QGridLayout, QSizePolicy
-)
+        QApplication, QWidget, QVBoxLayout, QLabel,
+        QPushButton, QMessageBox, QGridLayout, QSizePolicy)
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt, QTimer
-from core.ai_engine import AIPersona
+
 
 ENGINE_PATH = "chess_engine/stockfish/stockfish"
 
