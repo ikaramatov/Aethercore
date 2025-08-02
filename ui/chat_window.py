@@ -3,18 +3,19 @@ from PyQt6.QtCore import Qt, QTimer, QEvent
 from PyQt6.QtGui import QTextCursor, QFont, QPalette, QColor
 import random
 from core.ai_engine import AIPersona
-from core.chess_memory import ChessMemory
+from memory.memo_chess import ChessMemory
 from ui.utils import append_colored_text, animate_typing
 from games.chess import ChessGame
-from core.memory import Memory
 from ui.shortkeys import HandleShortkeys
+from memory.memo_context import MemoContext
 
 
-memory = Memory()
 
 class ChatWindow(QWidget):
     def __init__(self):
         super().__init__()
+        self.ai = AIPersona()
+        self.context = MemoContext(llm=self.ai.llm)
         self.setWindowTitle("Aethercore 2.0 💻")
         self.setGeometry(200, 200, 500, 600)
         
@@ -159,6 +160,7 @@ class ChatWindow(QWidget):
 
         self.input_line.clear()
         append_colored_text(self.chat_area, text, color="white")
+        self.context.infer_from_text(text)
         self.reset_idle_timer()
 
         if text.startswith("/"):
