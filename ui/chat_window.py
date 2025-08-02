@@ -6,13 +6,13 @@ from core.ai_engine import AIPersona
 from core.chess_memory import ChessMemory
 from ui.utils import append_colored_text, animate_typing
 from games.chess import ChessGame
-from ui.confirm_reboot import show_reboot_dialog
-from ui.confirm_chess import show_chess_dialog
-from ui.confirm_blackjack import show_blackjack_dialog
+from popup.confirm_reboot import show_reboot_dialog
+from popup.confirm_chess import show_chess_dialog
+from popup.confirm_blackjack import show_blackjack_dialog
 from core.memory import Memory
-from ui.confirm_ttt import show_ttt_dialog
+from popup.confirm_ttt import show_ttt_dialog
 from games.tictactoe import TicTacToeGame
-from games.blackjack_game import BlackjackGame
+from games.blackjack import BlackjackGame
 
 
 memory = Memory()
