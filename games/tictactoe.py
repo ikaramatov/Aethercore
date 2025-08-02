@@ -1,8 +1,8 @@
+import os
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGridLayout, QSizePolicy, QPushButton
 from PyQt6.QtCore import Qt, QCoreApplication, QTimer, QSize, QUrl
 from PyQt6.QtGui import QFont, QPixmap, QIcon, QCursor
 from PyQt6.QtMultimedia import QSoundEffect
-import os
 from games.aetheravatar import AetherAvatar
 
 class TicTacToeGame(QWidget):
@@ -105,7 +105,7 @@ class TicTacToeGame(QWidget):
                 
     def quit_game(self):
         if self.send_comment_callback:
-            self.send_comment_callback("Æ: Hmph, running away already?")
+            self.send_comment_callback("Hmph, running away already?")
         self.avatar.close()
         self.close()
 
