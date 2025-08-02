@@ -1,5 +1,4 @@
-import os
-import json
+import os, json
 from datetime import datetime
 
 MEMORY_FILE = "chess_memory.json"
@@ -71,11 +70,17 @@ class ChessMemory:
 
     def reset(self):
         self.data = {
-            "fen": None,
-            "moves": [],
-            "result": None
+            "fen": "startpos",
+            "last_move": None,
+            "game_active": False,
+            "move_history": [],
+            "started_at": None,
+            "ended_at": None,
+            "result": None,
+            "aether_comment": None
         }
         self.save()
+
 
     def is_active(self):
         return self.data.get("game_active", False)
