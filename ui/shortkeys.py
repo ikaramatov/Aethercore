@@ -8,9 +8,10 @@ from games.tictactoe import TicTacToeGame
 from games.chess import ChessGame
 from games.checkers import CheckersGame
 from popup.confirm_reboot import show_reboot_dialog
-from core.chess_memory import ChessMemory
+from memory.memo_chess import ChessMemory
 from ui.utils import append_colored_text, animate_typing
 from PyQt6.QtCore import QTimer
+from memory.memo_int import log_interaction
 
 class HandleShortkeys:
     @staticmethod
@@ -100,8 +101,10 @@ class HandleShortkeys:
         }
 
         if text in prompts:
+            log_interaction(text)
             response = chat_window.ai.generate_response(prompts[text])
             chat_window.render_aether_response(response)
+            return True
             
         
 
